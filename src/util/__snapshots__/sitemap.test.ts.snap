@@ -1,0 +1,73 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`In sitemap.test.1.xml [Sitemap#getExpandedItemTree] returns the expected array 1`] = `
+Array [
+  Object {
+    "children": Array [
+      Object {
+        "children": Array [
+          Object {
+            "children": Array [],
+            "id": "main-1.1",
+            "navtitle": "Main 1.1",
+            "resource": false,
+            "target": "file2.xml",
+          },
+          Object {
+            "children": Array [
+              Object {
+                "children": Array [],
+                "id": "main-1.2.1",
+                "navtitle": "Main 1.2.1",
+                "resource": false,
+                "target": "file2.xml",
+              },
+            ],
+            "id": "main-1.2",
+            "navtitle": "Main 1.2",
+            "resource": false,
+            "target": "file2.xml",
+          },
+        ],
+        "id": "main-1",
+        "navtitle": "Main 1",
+        "resource": false,
+        "target": "file1.xml",
+      },
+      Object {
+        "children": Array [
+          Object {
+            "children": Array [],
+            "id": "main-2.1",
+            "navtitle": "Main 2.1",
+            "resource": false,
+            "target": "file2.xml",
+          },
+          Object {
+            "children": Array [],
+            "id": "nested-1",
+            "navtitle": "Nested 1",
+            "resource": false,
+            "target": "file4.xml",
+          },
+          Object {
+            "children": Array [],
+            "id": "nested-2",
+            "navtitle": "Nested 2",
+            "resource": false,
+            "target": "file4.xml",
+          },
+        ],
+        "id": "main-2",
+        "navtitle": "Main 2",
+        "resource": false,
+        "target": "file3.xmlxml",
+      },
+    ],
+    "id": "main-root",
+    "navtitle": "Main root",
+    "resource": false,
+    "target": "file4.xml",
+  },
+]
+`;

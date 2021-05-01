@@ -1,0 +1,38 @@
+<map xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="id-bd0b95ec-b828-4520-bf34-3ee1dde307ba" xsi:noNamespaceSchemaLocation="urn:schema:location">
+	<topicref href="file4.xml" id="main-root">
+		<topicmeta>
+			<navtitle>Main root</navtitle>
+		</topicmeta>
+		<topicref href="file1.xml" id="main-1">
+			<topicmeta>
+				<navtitle>Main 1</navtitle>
+			</topicmeta>
+			<topicref href="file2.xml" id="main-1.1">
+				<topicmeta>
+					<navtitle>Main 1.1</navtitle>
+				</topicmeta>
+			</topicref>
+			<topicref href="file2.xml" id="main-1.2">
+				<topicmeta>
+					<navtitle>Main 1.2</navtitle>
+				</topicmeta>
+				<topicref href="file2.xml" id="main-1.2.1">
+					<topicmeta>
+						<navtitle>Main 1.2.1</navtitle>
+					</topicmeta>
+				</topicref>
+			</topicref>
+		</topicref>
+		<topicref href="file3.xmlxml" id="main-2">
+			<topicmeta>
+				<navtitle>Main 2</navtitle>
+			</topicmeta>
+			<topicref href="file2.xml" id="main-2.1">
+				<topicmeta>
+					<navtitle>Main 2.1</navtitle>
+				</topicmeta>
+			</topicref>
+			<mapref href="sitemap.test.2.xml" id="id-84a6d7ad-5cb6-4b92-ba8b-2645aeca9b26" />
+		</topicref>
+	</topicref>
+</map>
