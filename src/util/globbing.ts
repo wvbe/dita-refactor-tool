@@ -8,7 +8,8 @@ export async function getAllXmlFileNames(cwd: string): Promise<string[]> {
 		nodir: true,
 		ignore: 'node_modules/**/*.xml'
 	};
-	return new Promise((resolve, reject) =>
+	const matches = await new Promise<string[]>((resolve, reject) =>
 		glob('**/*.xml', options, (err, matches) => (err ? reject(err) : resolve(matches)))
 	);
+	return matches;
 }

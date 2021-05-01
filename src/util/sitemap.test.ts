@@ -8,7 +8,9 @@ describe('In sitemap.test.1.xml', () => {
 	const fileCache = new FileCache({
 		resolve: p => path.join(__dirname, '__data__', p),
 		fetch: p => fs.readFile(p, 'utf8'),
-		push: async () => {}
+		push: async () => {},
+		exists: async () => true,
+		move: async () => {}
 	});
 	const sitemap = new Sitemap(fileCache, 'sitemap.test.1.xml');
 

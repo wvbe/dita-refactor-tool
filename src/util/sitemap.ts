@@ -188,7 +188,12 @@ export function extractItemTree(
 	}
 	const root = { children: [] };
 
-	(function recurse(parent: { children: SitemapNodeType[] }, level: MinifiedSitemapTree[]) {
+	(function recurse(
+		parent: {
+			children: SitemapNodeType[];
+		},
+		level: MinifiedSitemapTree[]
+	) {
 		for (let i = 0; i < level.length; ++i) {
 			const item = {
 				...items[level[i] as number],

@@ -1,17 +1,23 @@
 #!/usr/bin/env node
 
-const { move } = require('../dist/index');
-
-const { Command, MultiOption, Option, Parameter } = require('ask-nicely');
+const { Command } = require('ask-nicely');
+const { move, error } = require('../dist');
+const { fileCache } = require('./util/fileCache');
 
 new Command('move')
 	.addParameter('target')
 	.addParameter('destination')
-	.setController(({ parameters }) => move(parameters.target, parameters.destination))
+	.addOption('non-interactive', 'I')
+	.setController(({ parameters, options }) =>
+		move(fileCache, parameters.target, parameters.destination, {
+			nonInteractive: options['non-interactive'],
+			projectRoot: process.cwd()
+		})
+	)
 	.execute(process.argv.slice(2))
-	.catch(error => {
-		console.log('Unexpected fatal error, stopping program');
-		console.log('----');
-		console.log(error.stack);
+	.catch(err => {
+		error('Unexpected fatal error, stopping program');
+		error('----');
+		error(err.stack);
 		process.exit();
 	});

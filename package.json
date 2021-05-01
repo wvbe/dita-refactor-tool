@@ -17,6 +17,7 @@
 		"lint": "tsdx lint",
 		"prepare": "tsdx build",
 		"size": "size-limit",
+		"format": "prettier \"{src,bin}/**/*.{ts,js,json}\" --write",
 		"analyze": "size-limit --why"
 	},
 	"bin": {

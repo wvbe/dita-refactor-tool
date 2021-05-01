@@ -11,7 +11,9 @@ describe('FileCache', () => {
 	const fileCache = new FileCache({
 		resolve: name => path.join(__dirname, '__data__', name),
 		fetch: async name => (await mockFileRead(name, 'utf8')).toString(),
-		push: async () => {}
+		push: async () => { },
+		exists: async () => true,
+		move: async () => {},
 	});
 
 	it('Minimizes time spent reading from disk', async () => {

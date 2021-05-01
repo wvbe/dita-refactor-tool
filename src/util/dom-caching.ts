@@ -6,11 +6,17 @@ export type FileCacheOptions = {
 	resolve: (filePath: string) => string;
 	fetch: (filePath: string) => Promise<string>;
 	push: (filePath: string, contents: string) => Promise<void>;
+	exists: (filePath: string) => Promise<boolean>;
+	move: (filePath: string, newFilePath: string) => Promise<void>;
 };
 
 export class FileCache {
-	private stringByName: { [filePath: string]: string | null } = {};
-	private domByFileName: { [filePath: string]: Document } = {};
+	private stringByName: {
+		[filePath: string]: string | null | false;
+	} = {};
+	private domByFileName: {
+		[filePath: string]: Document;
+	} = {};
 	private options: FileCacheOptions;
 
 	constructor(options: FileCacheOptions) {
@@ -18,7 +24,13 @@ export class FileCache {
 	}
 
 	public knowsAbout(filePath: string): boolean {
-		return !!this.stringByName[filePath];
+		return !!this.stringByName[filePath] || !!this.domByFileName[filePath];
+	}
+
+	public keys() {
+		return Object.keys(this.stringByName).filter(
+			filePath => this.knowsAbout(filePath) || this.stringByName[filePath] === false
+		);
 	}
 
 	public async getString(filePath: string): Promise<string> {
@@ -56,17 +68,22 @@ export class FileCache {
 		return this.domByFileName[filePath];
 	}
 
-	public injectString(filePath: string, contents: string) {
+	/**
+	 * For stubbing a DOM cache in tests.
+	 */
+	public injectString(filePath: string, contents: string | null) {
 		this.stringByName[filePath] = contents;
 	}
+
 	public async updateDocument(
 		filePath: string,
 		updateQuery: string,
 		variables: Record<string, any>
 	) {
+		const doc = await this.getDocument(filePath);
 		const { pendingUpdateList } = await evaluateUpdatingExpression(
 			updateQuery,
-			await this.getDocument(filePath),
+			doc,
 			null,
 			variables || {},
 			{
@@ -74,15 +91,16 @@ export class FileCache {
 			}
 		);
 
-		let executed = false;
+		let wasExecutedOnce = false;
 		return {
 			pendingUpdateList,
-			execute: () => {
-				if (executed) {
+			execute: (): void => {
+				if (wasExecutedOnce) {
 					throw new Error(`Cannot execute pending update list twice`);
 				}
-				executed = true;
-				return executePendingUpdateList(pendingUpdateList);
+				wasExecutedOnce = true;
+				executePendingUpdateList(pendingUpdateList);
+				this.stringByName[filePath] = null;
 			}
 		};
 	}
@@ -95,5 +113,21 @@ export class FileCache {
 	public async writeFile(filePath: string, contents?: Document): Promise<void> {
 		const dom = contents || (await this.getDocument(filePath));
 		return this.options.push(filePath, serializeToWellFormedString((dom as unknown) as Node));
+	}
+
+	public async existsFile(filePath: string): Promise<boolean> {
+		return this.options.exists(filePath);
+	}
+
+	public async moveFile(filePath: string, newFilePath: string): Promise<void> {
+		await this.options.move(filePath, newFilePath);
+
+		this.stringByName[newFilePath] = this.stringByName[filePath];
+		this.domByFileName[newFilePath] = this.domByFileName[filePath];
+
+		this.bustFile(filePath);
+	}
+	public discoverFile(filePath: string): void {
+		this.stringByName[filePath] = false;
 	}
 }

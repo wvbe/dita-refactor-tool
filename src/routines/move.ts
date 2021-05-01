@@ -1,70 +1,130 @@
-import chalk from 'chalk';
-import fs from 'fs-extra';
 import inquirer from 'inquirer';
 import path from 'path';
-import FILE_CACHE from '../FILE_CACHE';
-import { getAllXmlFileNames } from '../util/getAllXmlFileNames';
 
-export async function move(targetFileInput: string, destinationFileInput: string) {
+import { FileCache } from '../util/dom-caching';
+import { getAllXmlFileNames } from '../util/globbing';
+
+import { info, warn, success, error, prefix } from '../util/pretty-logging';
+// Register XPath functions:
+import '../util/xpath';
+
+export async function move(
+	fileCache: FileCache,
+	targetFileInput: string,
+	destinationFileInput: string,
+	{ nonInteractive, projectRoot }: { nonInteractive: boolean; projectRoot: string | null }
+) {
+	async function validateTargetName(input?: string) {
+		if (!input) {
+			return `A target file is required, "${input}" was given.`;
+		}
+		if (!(await fileCache.existsFile(input))) {
+			return `File target "${input}" does not exist`;
+		}
+		return true;
+	}
+
+	async function validateDestinationName(input?: string) {
+		if (!input) {
+			return `A destination is required, "${input}" was given.`;
+		}
+		if (await fileCache.existsFile(input)) {
+			return `File destination "${input}" already exists`;
+		}
+		return true;
+	}
+
 	/**
 	 * Show the intent so a user can verify it
 	 */
-	console.log(`${chalk.green('!')} Moving an XML file, and updating references:`);
-	const files = await inquirer.prompt<{
-		targetFile: string;
-		destinationFile: string;
-	}>([
-		{
-			name: 'targetFile',
-			type: 'input',
-			message: 'Move which file?',
-			default: targetFileInput,
-			validate: input => {
-				if (!input) {
-					return `Input "${input}" is not a valid file name`;
-				}
-				if (!fs.existsSync(input)) {
-					return `File target "${input}" does not exist`;
-				}
-				return true;
-			}
-		},
-		{
-			name: 'destinationFile',
-			type: 'input',
-			message: 'Move to where?',
-			default: destinationFileInput,
-			validate: input => {
-				if (!input) {
-					return `Input "${input}" is not a valid file name`;
-				}
-				if (fs.existsSync(input)) {
-					return `File destination "${input}" already exists`;
-				}
-				return true;
-			}
-		}
-	]);
+	info(`Moving an XML file, and updating references:`);
 
-	const targetFile = files.targetFile.replace(/\\/g, '/');
-	const destinationFile = files.destinationFile.replace(/\\/g, '/');
-	console.log(`  ${chalk.blue('Target')}       ${path.join(process.cwd(), targetFile)}`);
-	console.log(`  ${chalk.blue('Destination')}  ${path.join(process.cwd(), destinationFile)}`);
+	let targetFile: undefined | string, destinationFile: undefined | string;
+
+	const targetFileValid = await validateTargetName(targetFileInput);
+	if (targetFileValid === true) {
+		targetFile = targetFileInput;
+	} else if (nonInteractive) {
+		throw new Error(targetFileValid);
+	} else {
+		error(targetFileValid);
+	}
+	const destinationFileValid = await validateDestinationName(destinationFileInput);
+	if (destinationFileValid === true) {
+		destinationFile = destinationFileInput;
+	} else if (nonInteractive) {
+		throw new Error(destinationFileValid);
+	} else {
+		error(destinationFileValid);
+	}
+
+	if (!nonInteractive) {
+		const files = {
+			targetFile: targetFile,
+			destinationFile: destinationFile,
+			...(await inquirer.prompt<{
+				// Typed as optional, because the  property values are not returned
+				targetFile?: string;
+				destinationFile?: string;
+			}>(
+				[
+					{
+						name: 'targetFile',
+						type: 'input',
+						message: 'Move which file?',
+						default: targetFileInput,
+						// when: async () => !targetFileInput || !(await fileCache.existsFile(targetFileInput)),
+						validate: validateTargetName
+					},
+					{
+						name: 'destinationFile',
+						type: 'input',
+						message: 'Move to where?',
+						default: destinationFileInput,
+						// when: async () =>
+						// 	!destinationFileInput || (await fileCache.existsFile(destinationFileInput)),
+						validate: validateDestinationName
+					}
+				],
+				{
+					targetFile,
+					destinationFile
+				}
+			))
+		};
+		targetFile = files.targetFile || targetFile;
+		destinationFile = files.destinationFile || destinationFile;
+	}
+
+	// Posi
+	targetFile = (targetFile as string).replace(/\\/g, '/');
+	destinationFile = (destinationFile as string).replace(/\\/g, '/');
+
+	prefix('Project    ', projectRoot);
+	prefix('Target     ', path.join(process.cwd(), targetFile));
+	prefix('Destination', path.join(process.cwd(), destinationFile));
 
 	/**
 	 * Look up the changes that need to be made
 	 */
-	const allFiles = await getAllXmlFileNames(process.cwd());
-
-	// Warm up the cache
+	if (projectRoot) {
+		info('Googling project files...');
+		(await getAllXmlFileNames(projectRoot)).forEach(fileName =>
+			fileCache.discoverFile(fileName)
+		);
+	}
+	const allFiles = fileCache.keys();
+	info(`Create Pending updates list over ${allFiles.length} files...`);
 	const pendingUpdates = await Promise.all(
-		allFiles.map(async filePath => ({
+		fileCache.keys().map(async filePath => ({
 			filePath,
-			...(await FILE_CACHE.updateDocument(
+			...(await fileCache.updateDocument(
 				filePath,
 				`
 					declare namespace drt="https://github.com/wvbe/dita-refactor-tool";
-					let $references := //(@href|@conref)[fn:starts-with(drt:resolve-relative-reference($self, .), $target)]
+					let $references := //(@href|@conref)[
+						fn:starts-with(drt:resolve-relative-reference($self, .), $target)
+					]
 					return for $reference in $references
 						let $tokens := fn:tokenize($reference, '#')
 						return replace value of node $reference with fn:string-join(
@@ -90,24 +150,32 @@ export async function move(targetFileInput: string, destinationFileInput: string
 		(total, { pendingUpdateList }) => total + pendingUpdateList.length,
 		0
 	);
-	const answer = await inquirer.prompt({
-		type: 'confirm',
-		name: 'proceed',
-		message: `About to make ${attributesTouched} changes across ${filesTouched} out of ${allFiles.length} files, do you want to continue?`
-	});
+	warn(
+		`About to make ${attributesTouched} changes across ${filesTouched} out of ${allFiles.length} files.`
+	);
+	if (!nonInteractive) {
+		const answer = await inquirer.prompt({
+			type: 'confirm',
+			name: 'proceed',
+			message: `Do you want to continue?`
+		});
 
-	/**
-	 * Make changes
-	 */
-	if (!answer.proceed) {
-		console.log(`${chalk.green('!')} Aborting move, no changes have been made.`);
+		/**
+		 * Make changes
+		 */
+		if (!answer.proceed) {
+			warn(`Aborting move, no changes have been made.`);
+			return;
+		}
+	} else {
+		info(`Skip confirmation step.`);
 	}
 
-	console.log(`${chalk.green('!')} Moving file.`);
-	await fs.move(targetFile, destinationFile, { overwrite: false });
+	info(`Moving file...`);
+	await fileCache.moveFile(targetFile, destinationFile);
 
-	console.log(`${chalk.green('!')} Updating outbound references.`);
-	const { execute } = await FILE_CACHE.updateDocument(
+	info(`Updating outbound references...`);
+	const { execute } = await fileCache.updateDocument(
 		destinationFile,
 		`
 			declare namespace drt="https://github.com/wvbe/dita-refactor-tool";
@@ -124,17 +192,17 @@ export async function move(targetFileInput: string, destinationFileInput: string
 		}
 	);
 	await execute();
-	await FILE_CACHE.writeFile(destinationFile);
+	await fileCache.writeFile(destinationFile);
 
-	console.log(`${chalk.green('!')} Updating inbound references.`);
+	info(`Updating inbound references...`);
 	await Promise.all(
 		pendingUpdates
 			.filter(({ pendingUpdateList }) => pendingUpdateList.length)
-			.map(({ filePath, execute }) => {
-				execute();
-				FILE_CACHE.writeFile(filePath);
+			.map(async ({ filePath, execute }) => {
+				await execute();
+				return fileCache.writeFile(filePath);
 			})
 	);
 
-	console.log(`${chalk.green('!')} Done, all changes saved.`);
+	success(`Done, all changes saved.`);
 }

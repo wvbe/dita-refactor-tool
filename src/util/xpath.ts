@@ -1,6 +1,4 @@
 import path from 'path';
-import fs from 'fs-extra';
-import { FileCache } from './util/dom-caching';
 import { registerCustomXPathFunction } from 'fontoxpath';
 
 registerCustomXPathFunction(
@@ -25,7 +23,8 @@ registerCustomXPathFunction(
 			return referrer;
 		}
 
-		return path.posix.join(path.posix.dirname(referrer), target);
+		const joined = path.posix.join(path.posix.dirname(referrer), target);
+		return joined;
 	}
 );
 
@@ -50,9 +49,3 @@ registerCustomXPathFunction(
 		return rel;
 	}
 );
-
-export default new FileCache({
-	resolve: name => path.join(process.cwd(), name),
-	fetch: async name => fs.readFile(name, 'utf8'),
-	push: async (name, contents) => fs.writeFile(name, contents, 'utf8')
-});
