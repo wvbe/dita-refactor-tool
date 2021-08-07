@@ -5,6 +5,7 @@ import { FileCache } from '../util/dom-caching';
 import { getAllXmlFileNames } from '../util/globbing';
 
 import { info, warn, success, error, prefix } from '../util/pretty-logging';
+
 // Register XPath functions:
 import '../util/xpath';
 

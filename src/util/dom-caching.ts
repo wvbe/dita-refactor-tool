@@ -59,7 +59,9 @@ export class FileCache {
 
 		const fetchedContent = await this.getString(filePath);
 
-		this.domByFileName[filePath] = (sync(fetchedContent) as unknown) as Document;
+		this.domByFileName[filePath] = (sync(fetchedContent, {
+			position: true
+		}) as unknown) as Document;
 
 		// The DOM may be changed after it is returned, so unset that cache and let getString serialize the DOm back
 		// to a string next thime it is asked.
