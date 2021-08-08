@@ -4,6 +4,7 @@ import { Element } from 'slimdom';
 import { FileCache } from '../util/dom-caching';
 import { getAllXmlFileNames } from '../util/globbing';
 import { info, prefix, success, warn } from '../util/pretty-logging';
+import { Sitemap, SitemapNodeType } from '../util/sitemap';
 // Register XPath functions:
 import '../util/xpath';
 
@@ -13,7 +14,11 @@ type FixOptions = {
 	fixTextNotMatch: boolean;
 };
 
-function formatClickableName(filePath: string, el: Element) {
+/**
+ * Returns a file:line:column string for (the start of) the link text, in a syntax that VS Code
+ * will pick up on when clicked in the terminal.
+ */
+function formatClickableName(filePath: string, referrerElement: Element) {
 	const {
 		line,
 		column
@@ -22,16 +27,24 @@ function formatClickableName(filePath: string, el: Element) {
 		column: number;
 		start: number;
 		end: number;
-	} = (evaluateXPathToFirstNode('./text()', el) as any).position;
+	} = ((evaluateXPathToFirstNode('./text()', referrerElement) ||
+		referrerElement) as any).position;
 	return `${filePath}:${line}:${column}`;
 }
-
+type Answer = {
+	code: string;
+	keys: (string | null)[];
+	question: string;
+	print: () => void;
+	options: { label: string; xquf?: string; variables?: Record<string, any> }[];
+};
 async function checkOneReference(
 	fileCache: FileCache,
 	referrerFilePath: string,
 	referrerElement: Element,
-	options: FixOptions
-) {
+	options: FixOptions,
+	sitemapNodes: SitemapNodeType[] | null
+): Promise<false | Answer> {
 	const clickableReferrerLink = formatClickableName(referrerFilePath, referrerElement);
 	const referenceText = evaluateXPathToString('.', referrerElement);
 	const [targetFilePath, targetIdentifiers] =
@@ -51,7 +64,9 @@ async function checkOneReference(
 	} catch (e) {
 		return (
 			options.fixDocumentNotFound && {
-				question: `doc-not-found: How proceed?`,
+				code: 'doc-not-found',
+				keys: [targetFilePath],
+				question: `How proceed?`,
 				print: () => {
 					warn(
 						`The target file could not be loaded: ${e.message.substr(0, 20)}${
@@ -91,6 +106,8 @@ async function checkOneReference(
 	if (targetIdentifier && !targetElement) {
 		return (
 			options.fixElementNotFound && {
+				code: 'element-not-found',
+				keys: [targetFilePath, targetIdentifier],
 				question: `element-not-found: How proceed?`,
 				print: () => {
 					warn(`The referenced element was not found in the target document.`);
@@ -136,6 +153,40 @@ async function checkOneReference(
 	}
 
 	const targetTitleText = evaluateXPathToString('./title', targetElement);
+
+	if (sitemapNodes && !sitemapNodes.some(node => node.target === targetFilePath)) {
+		return {
+			code: 'document-not-in-map',
+			keys: [targetFilePath],
+			question: `How proceed?`,
+			print: () => {
+				warn(`The referenced document is not in the DITAMAP.`);
+				prefix('Referring file', clickableReferrerLink);
+				prefix('Link target   ', targetFilePath);
+				prefix('Link text     ', `"${referenceText}"`);
+				prefix('Target title  ', `"${targetTitleText}"`);
+			},
+			options: [
+				{
+					label: 'Skip'
+				},
+				{
+					label: 'Unwrap reference',
+					xquf: `
+						replace
+							node $node
+						with
+							$text
+					`,
+					variables: {
+						node: referrerElement,
+						text: referenceText
+					}
+				}
+			]
+		};
+	}
+
 	if (targetTitleText === referenceText) {
 		// Refernce text matches the target, no further improvements to suggest
 		return false;
@@ -143,6 +194,8 @@ async function checkOneReference(
 
 	return (
 		options.fixTextNotMatch && {
+			code: 'text-not-match',
+			keys: [targetFilePath, targetIdentifier].filter(Boolean),
 			question: `text-not-match: How proceed?`,
 			print: () => {
 				warn(`The link text does not match the target title text.`);
@@ -185,9 +238,112 @@ async function checkOneReference(
 	);
 }
 
+async function checkAllReferencesInFile(
+	fileCache: FileCache,
+	filePath: string,
+	fixOptions: FixOptions,
+	previouslyAnswered: PreviousAnswerRegistry<number>,
+	sitemapNodes: SitemapNodeType[] | null
+) {
+	const dom = await fileCache.getDocument(filePath);
+	const references = evaluateXPathToNodes(
+		`//*[
+			@href and
+			@format="dita" and
+			string(.)
+		]`,
+		dom
+	);
+
+	// const groupEnd = group('info', `${filePath}`);
+
+	let wasUpdated = false;
+
+	await references.reduce<Promise<boolean>>(async (last, referrerElement) => {
+		await last;
+		const suggestion = await checkOneReference(
+			fileCache,
+			filePath,
+			(referrerElement as unknown) as Element,
+			fixOptions,
+			sitemapNodes
+		);
+		if (!suggestion) {
+			return true;
+		}
+
+		info('');
+		suggestion.print();
+
+		const previousAnswer = previouslyAnswered.get([suggestion.code, ...suggestion.keys]);
+		const { response } = await inquirer.prompt([
+			{
+				message: suggestion.question,
+				name: 'response',
+				type: 'list',
+				choices: [
+					previousAnswer === undefined
+						? new inquirer.Separator(`Repeat last`)
+						: {
+								name: `Repeat last (${suggestion.options[previousAnswer].label})`,
+								value: suggestion.options[previousAnswer]
+						  },
+					...suggestion.options.map(option => ({
+						name: option.label,
+						value: option
+					}))
+				]
+			}
+		]);
+
+		previouslyAnswered.set(
+			[suggestion.code, ...suggestion.keys],
+			suggestion.options.indexOf(response) as number
+		);
+
+		if (response.callback) {
+			await response.callback();
+			wasUpdated = true;
+		} else if (response.xquf) {
+			const { pendingUpdateList, execute } = await fileCache.updateDocument(
+				filePath,
+				response.xquf,
+				response.variables
+			);
+			execute();
+			wasUpdated = !!pendingUpdateList.length;
+		}
+
+		if (wasUpdated) {
+			await fileCache.writeFile(filePath);
+		}
+
+		return true;
+	}, Promise.resolve(true));
+
+	return wasUpdated;
+}
+
+class PreviousAnswerRegistry<P> {
+	remembered: Record<string, P> = {};
+	private getKey(keys: (string | null)[]) {
+		return keys.join('/');
+	}
+	public set(keys: (string | null)[], answer: P) {
+		this.remembered[this.getKey(keys)] = answer;
+	}
+	public get(keys: (string | null)[]): P | undefined {
+		return this.remembered[this.getKey(keys)];
+	}
+}
+
 export async function checkReferences(
 	fileCache: FileCache,
-	{ projectRoot, ...fixOptions }: { projectRoot: string | null } & FixOptions
+	{
+		projectRoot,
+		rootFilePath,
+		...fixOptions
+	}: { projectRoot: string | null; rootFilePath: string | null } & FixOptions
 ) {
 	/**
 	 * Show the intent so a user can verify it
@@ -206,67 +362,20 @@ export async function checkReferences(
 		);
 	}
 
+	const sitemap = rootFilePath ? new Sitemap(fileCache, rootFilePath) : null;
+	if (rootFilePath) {
+		info('Indexing DITAMAP...');
+		await sitemap?.getNodes();
+	}
+	const previouslyAnswered = new PreviousAnswerRegistry<number>();
 	for await (const filePath of fileCache.keys()) {
-		const dom = await fileCache.getDocument(filePath);
-		const references = evaluateXPathToNodes(
-			`//*[
-				@href and
-				@format="dita" and
-				string(.)
-			]`,
-			dom
+		await checkAllReferencesInFile(
+			fileCache,
+			filePath,
+			fixOptions,
+			previouslyAnswered,
+			(await sitemap?.getNodes()) || null
 		);
-
-		// const groupEnd = group('info', `${filePath}`);
-
-		let wasUpdated = false;
-
-		await references.reduce<Promise<boolean>>(async (last, referrerElement) => {
-			await last;
-			const suggestion = await checkOneReference(
-				fileCache,
-				filePath,
-				(referrerElement as unknown) as Element,
-				fixOptions
-			);
-			if (!suggestion) {
-				return true;
-			}
-
-			info('');
-			suggestion.print();
-			const { response } = await inquirer.prompt([
-				{
-					message: suggestion.question,
-					name: 'response',
-					type: 'list',
-					choices: suggestion.options.map(option => ({
-						name: option.label,
-						value: option
-					}))
-				}
-			]);
-
-			if (response.callback) {
-				await response.callback();
-				wasUpdated = true;
-			} else if (response.xquf) {
-				const { pendingUpdateList, execute } = await fileCache.updateDocument(
-					filePath,
-					response.xquf,
-					response.variables
-				);
-				execute();
-				wasUpdated = !!pendingUpdateList.length;
-			}
-
-			if (wasUpdated) {
-				await fileCache.writeFile(filePath);
-			}
-
-			return true;
-		}, Promise.resolve(true));
-		// groupEnd();
 	}
 
 	info('');

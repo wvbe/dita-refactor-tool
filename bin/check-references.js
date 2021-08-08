@@ -8,10 +8,15 @@ new Command('check-references')
 	.addOption('fix-document-not-found')
 	.addOption('fix-element-not-found')
 	.addOption('fix-text-not-match')
+	.addOption('fix-document-not-in-map')
 	.addOption('fix-all')
 	.setController(({ parameters, options }) =>
 		checkReferences(fileCache, {
 			projectRoot: process.cwd(),
+			rootFilePath:
+				typeof options['fix-document-not-in-map'] === 'string'
+					? options['fix-document-not-in-map'] || null
+					: null,
 			fixDocumentNotFound: options['fix-document-not-found'] || options['fix-all'],
 			fixElementNotFound: options['fix-element-not-found'] || options['fix-all'],
 			fixTextNotMatch: options['fix-text-not-match'] || options['fix-all']

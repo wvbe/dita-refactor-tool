@@ -13,3 +13,18 @@ cross-references.
 ```sh
 dita-move docs/some/topic.xml docs/another/location.xml
 ```
+
+## Checking cross-references
+
+Go over any cross-reference that is broken, or whose link text does not match the target title, and
+decide what to do in an interactive prompt.
+
+```sh
+dita-check-references
+  --fix-document-not-found
+  --fix-element-not-found
+  --fix-text-not-match
+  --fix-all
+
+dita-check-references --fix-document-not-in-map my-ditamap.xml
+```

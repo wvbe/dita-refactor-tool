@@ -44,7 +44,12 @@ export async function getUniqueMapsInTree(
 			fileCache.bustFile(filePath);
 		}
 		const dom = await fileCache.getDocument(filePath);
-		const newFilePaths = evaluateXPathToStrings('//mapref[@href]/@href', dom).filter(
+		const newFilePaths = evaluateXPathToStrings(
+			'//mapref[@href]/Q{https://github.com/wvbe/dita-refactor-tool}resolve-relative-reference($self, @href)',
+			dom,
+			null,
+			{ self: filePath }
+		).filter(
 			nestedFilePath =>
 				!knownFilePaths.includes(nestedFilePath) &&
 				!queuedFilePaths.includes(nestedFilePath)
@@ -70,12 +75,14 @@ export async function getUniqueItemsFromMap(
 				"id": string(@id),
 				"navtitle": string(./topicmeta/navtitle),
 				"target": if (@href)
-					then string(@href)
+					then Q{https://github.com/wvbe/dita-refactor-tool}resolve-relative-reference($self, @href)
 					else (),
 				"resource": boolean(@processing-role = 'resource-only')
 			}
 		}`,
-		await fileCache.getDocument(mapFilePath)
+		await fileCache.getDocument(mapFilePath),
+		null,
+		{ self: mapFilePath }
 	);
 }
 
@@ -102,22 +109,28 @@ export async function getItemTree<T>(
 	rootFilePath: string,
 	boxItem: (node: Node, children: T[]) => T[]
 ): Promise<T[]> {
-	return (async function recurse(node: Document | Node): Promise<T[]> {
+	return (async function recurse(filePath: string, node: Document | Node): Promise<T[]> {
 		if (node.nodeType === 9) {
 			// If the node is the documentNode, go to the documentElement instead
-			return recurse((node as Document).documentElement);
+			return recurse(filePath, (node as Document).documentElement);
 		}
 		if (evaluateXPathToBoolean('self::mapref', node)) {
-			return recurse(await fileCache.getDocument(evaluateXPathToString('@href', node)));
+			const mapRefHref = evaluateXPathToString(
+				'Q{https://github.com/wvbe/dita-refactor-tool}resolve-relative-reference($self, @href)',
+				node,
+				null,
+				{ self: filePath }
+			);
+			return recurse(mapRefHref, await fileCache.getDocument(mapRefHref));
 		}
 
 		const childNodes = evaluateXPathToNodes('./(topicref|topichead|mapref)', node);
 		const childItems = (
-			await Promise.all(childNodes.map(node => recurse(node as Node)))
+			await Promise.all(childNodes.map(node => recurse(filePath, node as Node)))
 		).reduce((flat: T[], item: T[]) => flat.concat(...item), []);
 
 		return boxItem(node, childItems);
-	})(await fileCache.getDocument(rootFilePath));
+	})(rootFilePath, await fileCache.getDocument(rootFilePath));
 }
 
 // Exported for testing
