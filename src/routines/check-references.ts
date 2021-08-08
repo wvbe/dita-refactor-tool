@@ -1,11 +1,9 @@
-import * as path from 'path';
 import { evaluateXPathToFirstNode, evaluateXPathToNodes, evaluateXPathToString } from 'fontoxpath';
 import inquirer from 'inquirer';
 import { Element } from 'slimdom';
 import { FileCache } from '../util/dom-caching';
 import { getAllXmlFileNames } from '../util/globbing';
-import { error, info, prefix, success, warn } from '../util/pretty-logging';
-
+import { info, prefix, success, warn } from '../util/pretty-logging';
 // Register XPath functions:
 import '../util/xpath';
 
@@ -55,8 +53,11 @@ async function checkOneReference(
 			options.fixDocumentNotFound && {
 				question: `doc-not-found: How proceed?`,
 				print: () => {
-					console.log((referrerElement as any).position);
-					warn(`Could not load target file "${path.posix.basename(targetFilePath)}"`);
+					warn(
+						`The target file could not be loaded: ${e.message.substr(0, 20)}${
+							e.message.length > 20 ? '…' : ''
+						}`
+					);
 					prefix('Referring file', clickableReferrerLink);
 					prefix('Link target   ', targetFilePath);
 					prefix('Link text     ', `"${referenceText}"`);
@@ -92,8 +93,7 @@ async function checkOneReference(
 			options.fixElementNotFound && {
 				question: `element-not-found: How proceed?`,
 				print: () => {
-					error(`Could not find target element.`);
-					console.log((referrerElement as any).position);
+					warn(`The referenced element was not found in the target document.`);
 					prefix('Referring file', clickableReferrerLink);
 					prefix('Link target   ', targetFilePath);
 					prefix('Link element  ', targetIdentifier);
@@ -145,6 +145,7 @@ async function checkOneReference(
 		options.fixTextNotMatch && {
 			question: `text-not-match: How proceed?`,
 			print: () => {
+				warn(`The link text does not match the target title text.`);
 				prefix('Referring file', clickableReferrerLink);
 				prefix('Link text     ', `"${referenceText}"`);
 				prefix('Target title  ', `"${targetTitleText}"`);
