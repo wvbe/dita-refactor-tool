@@ -10,9 +10,11 @@ new Command('check-references')
 	.addOption('fix-text-not-match')
 	.addOption('fix-document-not-in-map')
 	.addOption('fix-all')
+	.addOption('non-interactive', 'I')
 	.setController(({ parameters, options }) =>
 		checkReferences(fileCache, {
 			projectRoot: process.cwd(),
+			nonInteractive: options['non-interactive'],
 			rootFilePath:
 				typeof options['fix-document-not-in-map'] === 'string'
 					? options['fix-document-not-in-map'] || null

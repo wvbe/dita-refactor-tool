@@ -1,6 +1,10 @@
 import path from 'path';
 import { registerCustomXPathFunction } from 'fontoxpath';
 
+function isExternalReference(target: string) {
+	return target.startsWith('http://') || target.startsWith('https://') || target.startsWith('//');
+}
+
 registerCustomXPathFunction(
 	{
 		namespaceURI: 'https://github.com/wvbe/dita-refactor-tool',
@@ -9,11 +13,7 @@ registerCustomXPathFunction(
 	['xs:string', 'xs:string'],
 	'xs:string',
 	(_: any, referrer: string, target: string) => {
-		if (
-			target.startsWith('http://') ||
-			target.startsWith('https://') ||
-			target.startsWith('//')
-		) {
+		if (isExternalReference(target)) {
 			return target;
 		}
 		if (target.startsWith('#')) {
@@ -36,11 +36,7 @@ registerCustomXPathFunction(
 	['xs:string', 'xs:string'],
 	'xs:string',
 	(_: any, referrer: string, target: string) => {
-		if (
-			target.startsWith('http://') ||
-			target.startsWith('https://') ||
-			target.startsWith('//')
-		) {
+		if (isExternalReference(target)) {
 			return target;
 		}
 

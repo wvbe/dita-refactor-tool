@@ -4,11 +4,13 @@ import { Element } from 'slimdom';
 import { FileCache } from '../util/dom-caching';
 import { getAllXmlFileNames } from '../util/globbing';
 import { info, prefix, success, warn } from '../util/pretty-logging';
-import { Sitemap, SitemapNodeType } from '../util/sitemap';
+import { Sitemap } from '../util/sitemap';
+import { posix as path } from 'path';
 // Register XPath functions:
 import '../util/xpath';
 
 type FixOptions = {
+	nonInteractive: boolean;
 	fixDocumentNotFound: boolean;
 	fixElementNotFound: boolean;
 	fixTextNotMatch: boolean;
@@ -31,20 +33,24 @@ function formatClickableName(filePath: string, referrerElement: Element) {
 		referrerElement) as any).position;
 	return `${filePath}:${line}:${column}`;
 }
-type Answer = {
+type Prompt = {
 	code: string;
 	keys: (string | null)[];
 	question: string;
 	print: () => void;
-	options: { label: string; xquf?: string; variables?: Record<string, any> }[];
+	options: {
+		label: string;
+		xquf?: string;
+		variables?: Record<string, any>;
+	}[];
 };
 async function checkOneReference(
 	fileCache: FileCache,
 	referrerFilePath: string,
 	referrerElement: Element,
 	options: FixOptions,
-	sitemapNodes: SitemapNodeType[] | null
-): Promise<false | Answer> {
+	sitemapNodes: string[] | null
+): Promise<false | Prompt> {
 	const clickableReferrerLink = formatClickableName(referrerFilePath, referrerElement);
 	const referenceText = evaluateXPathToString('.', referrerElement);
 	const [targetFilePath, targetIdentifiers] =
@@ -62,6 +68,9 @@ async function checkOneReference(
 	try {
 		targetDom = await fileCache.getDocument(targetFilePath);
 	} catch (e) {
+		const nerfs = fileCache
+			.keys()
+			.filter(k => path.basename(k) === path.basename(targetFilePath));
 		return (
 			options.fixDocumentNotFound && {
 				code: 'doc-not-found',
@@ -93,7 +102,21 @@ async function checkOneReference(
 							node: referrerElement,
 							text: referenceText
 						}
-					}
+					},
+					...nerfs.map(suggestedFilePath => ({
+						label: `Update to point to "${suggestedFilePath}"`,
+						xquf: `
+							replace
+								value of node $node/@href
+							with
+								Q{https://github.com/wvbe/dita-refactor-tool}create-relative-reference($self, $filePath)
+						`,
+						variables: {
+							self: referrerFilePath,
+							node: referrerElement,
+							filePath: suggestedFilePath
+						}
+					}))
 				]
 			}
 		);
@@ -154,7 +177,7 @@ async function checkOneReference(
 
 	const targetTitleText = evaluateXPathToString('./title', targetElement);
 
-	if (sitemapNodes && !sitemapNodes.some(node => node.target === targetFilePath)) {
+	if (sitemapNodes && !sitemapNodes.includes(targetFilePath)) {
 		return {
 			code: 'document-not-in-map',
 			keys: [targetFilePath],
@@ -243,14 +266,13 @@ async function checkAllReferencesInFile(
 	filePath: string,
 	fixOptions: FixOptions,
 	previouslyAnswered: PreviousAnswerRegistry<number>,
-	sitemapNodes: SitemapNodeType[] | null
+	sitemapNodes: string[] | null
 ) {
 	const dom = await fileCache.getDocument(filePath);
 	const references = evaluateXPathToNodes(
 		`//*[
 			@href and
-			@format="dita" and
-			string(.)
+			@format="dita"
 		]`,
 		dom
 	);
@@ -343,7 +365,10 @@ export async function checkReferences(
 		projectRoot,
 		rootFilePath,
 		...fixOptions
-	}: { projectRoot: string | null; rootFilePath: string | null } & FixOptions
+	}: {
+		projectRoot: string | null;
+		rootFilePath: string | null;
+	} & FixOptions
 ) {
 	/**
 	 * Show the intent so a user can verify it
@@ -362,10 +387,14 @@ export async function checkReferences(
 		);
 	}
 
-	const sitemap = rootFilePath ? new Sitemap(fileCache, rootFilePath) : null;
+	let sitemapFilePaths: string[] | null = null;
 	if (rootFilePath) {
+		const sitemap = rootFilePath ? new Sitemap(fileCache, rootFilePath) : null;
 		info('Indexing DITAMAP...');
-		await sitemap?.getNodes();
+		sitemapFilePaths = [
+			...((await sitemap?.getMaps()) || []),
+			...((await sitemap?.getNodes()) || []).map(node => node.target)
+		].filter((x): x is string => Boolean(x));
 	}
 	const previouslyAnswered = new PreviousAnswerRegistry<number>();
 	for await (const filePath of fileCache.keys()) {
@@ -374,7 +403,7 @@ export async function checkReferences(
 			filePath,
 			fixOptions,
 			previouslyAnswered,
-			(await sitemap?.getNodes()) || null
+			sitemapFilePaths
 		);
 	}
 

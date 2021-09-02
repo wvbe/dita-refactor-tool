@@ -20,6 +20,7 @@
 	},
 	"bin": {
 		"dita-move": "./bin/move.js",
+		"dita-prune": "./bin/prune.js",
 		"dita-check-references": "./bin/check-references.js"
 	},
 	"peerDependencies": {},

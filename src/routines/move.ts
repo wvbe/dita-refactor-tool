@@ -172,6 +172,16 @@ export async function move(
 		info(`Skip confirmation step.`);
 	}
 
+	info(`Updating inbound references...`);
+	await Promise.all(
+		pendingUpdates
+			.filter(({ pendingUpdateList }) => pendingUpdateList.length)
+			.map(async ({ filePath, execute }) => {
+				await execute();
+				return fileCache.writeFile(filePath);
+			})
+	);
+
 	info(`Moving file...`);
 	await fileCache.moveFile(targetFile, destinationFile);
 
@@ -194,16 +204,6 @@ export async function move(
 	);
 	await execute();
 	await fileCache.writeFile(destinationFile);
-
-	info(`Updating inbound references...`);
-	await Promise.all(
-		pendingUpdates
-			.filter(({ pendingUpdateList }) => pendingUpdateList.length)
-			.map(async ({ filePath, execute }) => {
-				await execute();
-				return fileCache.writeFile(filePath);
-			})
-	);
 
 	success(`Done, all changes saved.`);
 }

@@ -224,6 +224,7 @@ export function extractItemTree(
 	return root.children;
 }
 
+
 export class Sitemap {
 	fileCache: FileCache;
 	rootFilePath: string;
